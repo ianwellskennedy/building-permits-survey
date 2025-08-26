@@ -25,8 +25,10 @@ county_shp_file_path <- "C:/Users/ianwe/Downloads/shapefiles/2023/Counties/cb_20
 
 county_building_permits_folder <- "inputs/raw-bps-downloads/co"
 
-output_tabular_data_file_path <- "outputs/shapefiles/permit_share_of_housing_units_by_county.xlsx"
-output_shp_file_path <- "outputs/shapefiles/permit_share_of_housing_units_by_county.shp"
+output_tabular_data_file_path <- "outputs/permit_share_of_housing_units_by_county.xlsx"
+output_trailing_twelve_months_shp_file_path <- "C:/Users/ianwe/Downloads/ArcGIS projects for github/building-permits-survey/shapefiles/permit_share_of_housing_units_by_county_trailing_twelve_months.shp"
+output_trailing_three_months_shp_file_path <- "C:/Users/ianwe/Downloads/ArcGIS projects for github/building-permits-survey/shapefiles/permit_share_of_housing_units_by_county_trailing_three_months.shp"
+output_current_month_shp_file_path <- "C:/Users/ianwe/Downloads/ArcGIS projects for github/building-permits-survey/shapefiles/permit_share_of_housing_units_by_county_current_month.shp"
 
 # # Downloading permit files  ----
 # 
@@ -99,6 +101,7 @@ download_dir <- "inputs/raw-bps-downloads"
 
 # List all .txt files
 permit_files <- list.files(download_dir, pattern = "c\\.txt$", full.names = TRUE)
+permit_files <- permit_files[grepl("23|24|25", permit_files)]
 
 # Read each file into a list of data frames
 permit_data_list <- lapply(permit_files, function(file) {
@@ -148,23 +151,62 @@ write.xlsx(permit_data_cleaned, output_tabular_data_file_path)
 
 # Output spatial data ----
 
-<<<<<<< HEAD
 permit_data_cleaned_spatial_historical <- permit_data_cleaned %>%
-  left_join(county_shp_geo, by = 'county_fips_code') %>%
-  mutate(month = as.character(month)) %>%
-  st_as_sf()
-
-=======
-permit_data_cleaned_spatial <- permit_data_cleaned %>%
   left_join(county_shp_geo, by = 'county_fips_code') %>%
   mutate(month = as.character(month))
 
-# Convert 'Counties' back to a spatial data frame
-permit_data_cleaned_spatial <- st_as_sf(permit_data_cleaned_spatial)
->>>>>>> ef9e0f127dd8994e16568ea199c98b8e152c89c0
+twelve_months_ago <- as.Date(max(permit_data_cleaned_spatial_historical$month)) %m-% months(12)
+ 
+permit_data_cleaned_spatial_recent <- permit_data_cleaned %>%
+  left_join(county_shp_geo, by = 'county_fips_code') %>%
+  filter(month > twelve_months_ago) %>%
+  select(-c(ends_with('_value'), ends_with('_bldgs')))
+
+permit_data_cleaned_spatial_trailing_twelve_months <- permit_data_cleaned_spatial_recent %>%
+  group_by(county_name, county_short_name, county_fips_code, state) %>%
+  summarize(across(one_unit_units:five_plus_unit_units, ~sum(., na.rm = T))) %>%
+  ungroup() %>%
+  mutate(total_units = one_unit_units + two_unit_units + three_four_unit_units + five_plus_unit_units)
+
+three_months_ago <- as.Date(max(permit_data_cleaned_spatial_historical$month)) %m-% months(3)
+
+permit_data_cleaned_spatial_trailing_three_months <- permit_data_cleaned_spatial_recent %>%
+  filter(month > three_months_ago) %>%
+  group_by(county_name, county_short_name, county_fips_code, state) %>%
+  summarize(across(one_unit_units:five_plus_unit_units, ~sum(., na.rm = T))) %>%
+  ungroup() %>%
+  mutate(total_units = one_unit_units + two_unit_units + three_four_unit_units + five_plus_unit_units) 
+
+current_month <- as.Date(max(permit_data_cleaned_spatial_historical$month))
+
+permit_data_cleaned_spatial_current_month <- permit_data_cleaned_spatial_recent %>%
+  filter(month == current_month) %>%
+  group_by(county_name, county_short_name, county_fips_code, state) %>%
+  summarize(across(one_unit_units:five_plus_unit_units, ~sum(., na.rm = T))) %>%
+  ungroup() %>%
+  mutate(total_units = one_unit_units + two_unit_units + three_four_unit_units + five_plus_unit_units) 
+
+
+permit_data_cleaned_spatial_trailing_twelve_months <- permit_data_cleaned_spatial_trailing_twelve_months %>%
+  left_join(county_housing_stock, by = c('county_name', 'county_short_name', 'county_fips_code', 'state')) %>%
+  mutate(tot_shr = (total_units / housing_units_2024)*100) %>%
+  st_as_sf()
+
+permit_data_cleaned_spatial_trailing_three_months <- permit_data_cleaned_spatial_trailing_three_months %>%
+  left_join(county_housing_stock, by = c('county_name', 'county_short_name', 'county_fips_code', 'state')) %>%
+  mutate(tot_shr = (total_units*4 / housing_units_2024)*100) %>%
+  st_as_sf()
+
+permit_data_cleaned_spatial_current_month <- permit_data_cleaned_spatial_current_month %>%
+  left_join(county_housing_stock, by = c('county_name', 'county_short_name', 'county_fips_code', 'state')) %>%
+  mutate(tot_shr = (total_units*12 / housing_units_2024)*100) %>%
+  st_as_sf()
+
 
 # Check to make sure there is an Active ArcGIS Installation
 arc.check_product()
 
 # Output the ACS county data to the path specified
-arc.write(path = output_shp_file_path, data = permit_data_cleaned_spatial, overwrite = T, validate = T)
+arc.write(path = output_trailing_twelve_months_shp_file_path, data = permit_data_cleaned_spatial_trailing_twelve_months, overwrite = T, validate = T)
+arc.write(path = output_trailing_three_months_shp_file_path, data = permit_data_cleaned_spatial_trailing_three_months, overwrite = T, validate = T)
+arc.write(path = output_current_month_shp_file_path, data = permit_data_cleaned_spatial_current_month, overwrite = T, validate = T)
