@@ -148,11 +148,20 @@ write.xlsx(permit_data_cleaned, output_tabular_data_file_path)
 
 # Output spatial data ----
 
+<<<<<<< HEAD
 permit_data_cleaned_spatial_historical <- permit_data_cleaned %>%
   left_join(county_shp_geo, by = 'county_fips_code') %>%
   mutate(month = as.character(month)) %>%
   st_as_sf()
 
+=======
+permit_data_cleaned_spatial <- permit_data_cleaned %>%
+  left_join(county_shp_geo, by = 'county_fips_code') %>%
+  mutate(month = as.character(month))
+
+# Convert 'Counties' back to a spatial data frame
+permit_data_cleaned_spatial <- st_as_sf(permit_data_cleaned_spatial)
+>>>>>>> ef9e0f127dd8994e16568ea199c98b8e152c89c0
 
 # Check to make sure there is an Active ArcGIS Installation
 arc.check_product()
