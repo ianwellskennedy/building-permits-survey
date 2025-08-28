@@ -21,11 +21,14 @@ conflicts_prefer(dplyr::filter)
 # File paths / environment variables ----
 
 county_housing_stock_file_path <- "inputs/CO-EST2024-HU.xlsx"
-county_shp_file_path <- "C:/Users/ianwe/Downloads/shapefiles/2023/Counties/cb_2023_us_county_500k.shp"
+county_shp_file_path_2023 <- "C:/Users/ianwe/Downloads/shapefiles/2024/Counties/cb_2024_us_county_5m.shp"
+county_shp_file_path_2020 <- "C:/Users/ianwe/Downloads/shapefiles/2020/Counties/cb_2020_us_county_500k.shp"
 
 county_building_permits_folder <- "inputs/raw-bps-downloads/co"
 
 output_tabular_data_file_path <- "outputs/permit_share_of_housing_units_by_county.xlsx"
+
+output_historical_shp_file_path <- "C:/Users/ianwe/Downloads/ArcGIS projects for github/building-permits-survey/shapefiles/historical_permit_data.shp"
 output_trailing_twelve_months_shp_file_path <- "C:/Users/ianwe/Downloads/ArcGIS projects for github/building-permits-survey/shapefiles/permit_share_of_housing_units_by_county_trailing_twelve_months.shp"
 output_trailing_three_months_shp_file_path <- "C:/Users/ianwe/Downloads/ArcGIS projects for github/building-permits-survey/shapefiles/permit_share_of_housing_units_by_county_trailing_three_months.shp"
 output_current_month_shp_file_path <- "C:/Users/ianwe/Downloads/ArcGIS projects for github/building-permits-survey/shapefiles/permit_share_of_housing_units_by_county_current_month.shp"
@@ -71,17 +74,10 @@ output_current_month_shp_file_path <- "C:/Users/ianwe/Downloads/ArcGIS projects 
 # Read in county housing stock and shape file ---- 
 
 county_housing_stock <- read.xlsx(county_housing_stock_file_path, sheet = 'clean')
-county_shp <- st_read(county_shp_file_path)
+county_shp_2023 <- st_read(county_shp_file_path_2023)
+county_shp_2020 <- st_read(county_shp_file_path_2020)
 
-# Clean county housing stock and shape file ----
-
-county_shp <- county_shp %>%
-  select(NAMELSAD, NAME, STATE_NAME, GEOID) %>%
-  rename(county_fips_code = GEOID, county_name = NAMELSAD, county_short_name = NAME, state = STATE_NAME) %>%
-  filter(!state %in% c("American Samoa", "Commonwealth of the Northern Mariana Islands", "Puerto Rico", "United States Virgin Islands", "Guam"))
-
-county_shp_info <- county_shp %>%
-  st_drop_geometry()
+# Clean county housing stock file ----
 
 county_housing_stock <- county_housing_stock %>%
   mutate(county = str_remove(county, '^\\.')) %>%
@@ -89,10 +85,30 @@ county_housing_stock <- county_housing_stock %>%
          county = str_trim(str_remove(county, ",.*"))) %>%
   rename(county_name = county)
 
-county_housing_stock <- county_housing_stock %>%
-  left_join(county_shp, by = c('county_name', 'state'))
+# Clean county shape files ---- 
 
-county_shp_geo <- county_shp %>%
+clean_county_shp <- function(data) {
+  data <- data %>%
+    select(NAMELSAD, NAME, STATE_NAME, GEOID) %>%
+    rename(county_fips_code = GEOID, county_name = NAMELSAD, county_short_name = NAME, state = STATE_NAME) %>%
+    filter(!state %in% c("American Samoa", "Commonwealth of the Northern Mariana Islands", "Puerto Rico", "United States Virgin Islands", "Guam"))
+  
+}
+
+county_shp_2023 <- county_shp_2023 %>%
+  clean_county_shp()
+county_shp_2020 <- county_shp_2020 %>%
+  clean_county_shp()
+
+county_shp_2023_info <- county_shp_2023 %>%
+  st_drop_geometry()
+county_shp_2020_info <- county_shp_2020 %>%
+  st_drop_geometry()
+
+county_housing_stock <- county_housing_stock %>%
+  left_join(county_shp_2023, by = c('county_name', 'state'))
+
+county_shp_2023_geo <- county_shp_2023 %>%
   select(county_fips_code, geometry)
 
 # Read in building permits data ----
@@ -139,10 +155,11 @@ permit_data_cleaned <- permit_data_cleaned %>%
   select(-survey)
 
 permit_data_cleaned <- permit_data_cleaned %>%
-  left_join(county_shp_info, by = 'county_fips_code')
+  left_join(county_shp_2023_info, by = 'county_fips_code')
 
 permit_data_cleaned <- permit_data_cleaned %>%
-  select(month:year, county_name, county_short_name, county_fips_code, state, month:year, everything()) %>%
+  select(month:year, county_name, county_short_name, county_fips_code, state, month:year, ends_with("_units")) %>%
+  mutate(total_units = one_unit_units + two_unit_units + three_four_unit_units + five_plus_unit_units) %>%
   filter(year >= 2023)
 
 # Output tabular data ----
@@ -152,15 +169,15 @@ write.xlsx(permit_data_cleaned, output_tabular_data_file_path)
 # Output spatial data ----
 
 permit_data_cleaned_spatial_historical <- permit_data_cleaned %>%
-  left_join(county_shp_geo, by = 'county_fips_code') %>%
-  mutate(month = as.character(month))
+  left_join(county_shp_2023_geo, by = 'county_fips_code') %>%
+  mutate(month = as.character(month)) %>%
+  st_as_sf()
 
 twelve_months_ago <- as.Date(max(permit_data_cleaned_spatial_historical$month)) %m-% months(12)
  
 permit_data_cleaned_spatial_recent <- permit_data_cleaned %>%
-  left_join(county_shp_geo, by = 'county_fips_code') %>%
-  filter(month > twelve_months_ago) %>%
-  select(-c(ends_with('_value'), ends_with('_bldgs')))
+  left_join(county_shp_2023_geo, by = 'county_fips_code') %>%
+  filter(month > twelve_months_ago)
 
 permit_data_cleaned_spatial_trailing_twelve_months <- permit_data_cleaned_spatial_recent %>%
   group_by(county_name, county_short_name, county_fips_code, state) %>%
@@ -207,6 +224,7 @@ permit_data_cleaned_spatial_current_month <- permit_data_cleaned_spatial_current
 arc.check_product()
 
 # Output the ACS county data to the path specified
+arc.write(path = output_historical_shp_file_path, data = permit_data_cleaned_spatial_historical, overwrite = T, validate = T)
 arc.write(path = output_trailing_twelve_months_shp_file_path, data = permit_data_cleaned_spatial_trailing_twelve_months, overwrite = T, validate = T)
 arc.write(path = output_trailing_three_months_shp_file_path, data = permit_data_cleaned_spatial_trailing_three_months, overwrite = T, validate = T)
 arc.write(path = output_current_month_shp_file_path, data = permit_data_cleaned_spatial_current_month, overwrite = T, validate = T)
