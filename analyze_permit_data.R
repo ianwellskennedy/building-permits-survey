@@ -119,6 +119,8 @@ download_dir <- "inputs/raw-bps-downloads"
 permit_files <- list.files(download_dir, pattern = "c\\.txt$", full.names = TRUE)
 permit_files <- permit_files[grepl("23|24|25", permit_files)]
 
+
+# Check to make 
 # Read each file into a list of data frames
 permit_data_list <- lapply(permit_files, function(file) {
   message("Reading: ", file)
@@ -219,8 +221,10 @@ permit_data_cleaned_spatial_current_month <- permit_data_cleaned_spatial_current
   mutate(tot_shr = (total_units*12 / housing_units_2024)*100) %>%
   st_as_sf()
 
+object.size(permit_data_cleaned_spatial_historical) 
+permit_data_cleaned_spatial_historical <- st_simplify(permit_data_cleaned_spatial_historical, preserveTopology = T, dTolerance = 500)
+object.size(permit_data_cleaned_spatial_historical) 
 
-# Check to make sure there is an Active ArcGIS Installation
 arc.check_product()
 
 # Output the ACS county data to the path specified
